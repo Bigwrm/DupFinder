@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Document Processor</title>
+      <style>
+        body {
+          font-family: Arial, sans-serif;
+          padding: 20px;
+        }
+        .upload-area {
+          border: 2px dashed #ccc;
+          padding: 20px;
+          text-align: center;
+          margin-bottom: 20px;
+          cursor: pointer;
+        }
+        .upload-area.dragover {
+          border-color: #000;
+          background-color: #f0f0f0;
+        }
+        .results {
+          margin-top: 20px;
+        }
+        .similarity-group {
+          margin-bottom: 30px;
+          padding: 15px;
+          border: 1px solid #ddd;
+          border-radius: 4px;
+        }
+        .similarity-score {
+          font-weight: bold;
+          color: #007bff;
+          margin-bottom: 15px;
+        }
+        .main-paragraph {
+          margin: 10px 0;
+          padding: 10px;
+          background-color: #f8f9fa;
+          border-radius: 4px;
+        }
+        .similar-paragraph {
+          margin: 10px 0 10px 20px;
+          padding: 10px;
+          background-color: #e9ecef;
+          border-radius: 4px;
+        }
+        .file-input {
+          display: none;
+        }
+        #browse-link {
+          color: blue;
+          text-decoration: underline;
+          cursor: pointer;
+        }
+      </style>
+    </head>
+    <body>
+      <h1>Document Processor</h1>
+      <div class="upload-area" id="upload-area">
+        <p>Drag & drop a .txt or .docx file here, or <span id="browse-link">click to browse</span></p>
+        <input type="file" id="file-input" class="file-input" accept=".txt,.docx">
+      </div>
+      <div class="results" id="results"></div>
+
+      <script>
+        const uploadArea = document.getElementById('upload-area');
+        const fileInput = document.getElementById('file-input');
+        const browseLink = document.getElementById('browse-link');
+        const resultsContainer = document.getElementById('results');
+
+        // Handle drag and drop
+        uploadArea.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+          uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+          e.preventDefault();
+          uploadArea.classList.remove('dragover');
+          if (e.dataTransfer.files.length > 0) {
+            handleFile(e.dataTransfer.files[0]);
+          }
+        });
+
+        // Handle file input
+        browseLink.addEventListener('click', (e) => {
+          e.stopPropagation();
+          fileInput.click();
+        });
+
+        fileInput.addEventListener('change', (e) => {
+          if (e.target.files.length > 0) {
+            handleFile(e.target.files[0]);
+          }
+        });
+
+        async function handleFile(file) {
+          if (!['text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'].includes(file.type)) {
+            alert('Please upload a .txt or .docx file');
+            return;
+          }
+
+          try {
+            const fileData = await readFileAsBase64(file);
+            const response = await fetch('/process', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                file: fileData,
+                type: file.type
+              })
+            });
+
+            if (!response.ok) {
+              const errorData = await response.json();
+              throw new Error(errorData.error || 'Failed to process file');
+            }
+
+            const data = await response.json();
+            displayResults(data.results);
+          } catch (error) {
+            console.error('Error:', error);
+            alert(`Error: ${error.message}`);
+          }
+        }
+
+        function readFileAsBase64(file) {
+          return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const base64String = reader.result.split(',')[1];
+              resolve(base64String);
+            };
+            reader.onerror = () => reject(new Error('Failed to read file'));
+            reader.readAsDataURL(file);
+          });
+        }
+
+        function displayResults(results) {
+          resultsContainer.innerHTML = results.map(group => `
+            <div class="similarity-group">
+              <div class="similarity-score">Similarity: ${group.similarity}%</div>
+              <div class="main-paragraph">
+                <strong>Paragraph ${group.mainParagraph}:</strong>
+                <p>${group.mainText}</p>
+              </div>
+              ${group.similarParagraphs.map(p => `
+                <div class="similar-paragraph">
+                  <strong>Paragraph ${p.paragraph}:</strong>
+                  <p>${p.text}</p>
+                </div>
+              `).join('')}
+            </div>
+          `).join('');
+        }
+      </script>
+    </body>
+    </html>
